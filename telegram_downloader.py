@@ -82,47 +82,162 @@ def _filename_for(document, message_id: int) -> str:
     return f"audio_{message_id}{ext}"
 
 
+import re
+import unicodedata
+
+# Prayer keywords (Arabic) mapped to short English labels
+_PRAYER_MAP = {
+    "الفجر": "Fajr", "فجر": "Fajr",
+    "الظهر": "Dhuhr", "ظهر": "Dhuhr",
+    "العصر": "Asr", "عصر": "Asr",
+    "المغرب": "Maghrib", "مغرب": "Maghrib",
+    "العشاء": "Isha", "عشاء": "Isha",
+    "الجمعة": "Jumuah", "جمعة": "Jumuah",
+    "الجمع": "Jumuah",
+    "التراويح": "Tarawih", "تراويح": "Tarawih",
+    "التهجد": "Tahajjud", "تهجد": "Tahajjud",
+    "القيام": "Qiyam", "قيام": "Qiyam",
+    "الوتر": "Witr", "وتر": "Witr",
+}
+
+# Regex to extract Surah names after common Arabic connectors
+# Also handles bare "سورة X" without a preceding "من"
+_SURAH_AFTER = re.compile(
+    r'(?:(?:من\s+)?سور(?:ة|تي|ت)\s*|تلاوة\s+(?:من\s+)?سور(?:ة|تي|ت)\s*|لسور(?:ة|تي|ت)\s*)'
+    r'(.+)',
+    re.UNICODE,
+)
+
+# Noise suffixes to strip from the info line (URLs, app promo, sharing text)
+_NOISE = re.compile(
+    r'\s*https?://\S+|\s*تمت المشاركة.*|'
+    r'\s*\|\s*$|\s*\.\s*$',
+    re.UNICODE,
+)
+
+# Unicode directional / invisible marks that appear in the raw text
+_INVISIBLE = re.compile(r'[\u200f\u200e\u200b\u2069\u2068\u202c\u202d\u202e]')
+
+
+def _clean(s: str) -> str:
+    """Strip invisible marks and extra whitespace."""
+    s = _INVISIBLE.sub("", s).strip()
+    return re.sub(r'\s{2,}', ' ', s)  # collapse multiple spaces
+
+
+def _extract_reciter(lines: list[str]) -> str | None:
+    """Return reciter name from 'للشيخ/للشيخة X' pattern."""
+    for line in lines:
+        m = re.search(r'للشيخ[ة]?\s+(.+)', line)
+        if m:
+            return _clean(m.group(1))
+    return None
+
+
+def _extract_prayer(text: str) -> str | None:
+    """Return short prayer label if a known prayer keyword is found."""
+    text = _clean(text)  # strip invisible chars before matching
+    for ar, en in _PRAYER_MAP.items():
+        if ar in text:
+            return en
+    return None
+
+
+def _extract_surahs(info_line: str) -> str | None:
+    """
+    Try to pull just the Surah name(s) from the info line.
+    Returns only the Arabic surah name(s), stopping before any English/date/URL.
+    """
+    m = _SURAH_AFTER.search(info_line)
+    if not m:
+        return None
+    raw = m.group(1)
+    # Cut at: URL, pipe, slash, date pattern, or first run of Latin characters
+    raw = re.split(
+        r'\s*https?://|'           # URL
+        r'\s*\|\s*|'               # pipe separator
+        r'\s*/\s*|'                # slash separator
+        r'\s*\d{1,2}[-/]\d{1,2}[-/]\d{3,4}|'  # date dd-mm-yyyy (3+ digit year)
+        r'\s*\d{4}[-/]\d{1,2}[-/]\d{1,2}|'    # date yyyy-mm-dd
+        r'\s*\d{1,2}\s+(?:محرم|صفر|ربيع|جمادى|رجب|شعبان|رمضان|شوال|ذو)|'  # hijri date
+        r'(?<=[^\x00-\x7F])\s+[A-Za-z]',      # Arabic then space then Latin
+        raw
+    )[0]
+    raw = _NOISE.sub("", raw)
+    # Strip trailing punctuation / spaces
+    raw = re.sub(r'[\s\.,،؛:]+$', '', raw)
+    return _clean(raw) or None
+
+
+def _extract_info_line(lines: list[str], reciter_line_idx: int) -> str | None:
+    """Return the first non-empty, non-URL line after the reciter line."""
+    for line in lines[reciter_line_idx + 1:]:
+        if not line.startswith("http"):
+            return _clean(line)
+    return None
+
+
 def _track_title(message, filename: str) -> str:
     """
-    Parse reciter and surah from the message text.
+    Build a clean track title from the Telegram message text.
 
-    Typical message format:
-        تلاوةٌ للشيخ <Reciter Name>
-        صلاة <Prayer> من <Surah info>
-        https://...
+    Strategy (in priority order):
+      1. "<Reciter> - <Prayer> - <Surah(s)>"  — ideal full parse
+      2. "<Reciter> - <info line>"             — reciter + raw info (trimmed)
+      3. "<info line>"                         — no reciter found
+      4. filename stem                         — fallback
 
-    Returns "<Reciter> - <Surah line>" if parseable, else filename stem.
+    All invisible Unicode marks are stripped. The result is capped at 200 chars.
     """
-    import re
     text = (getattr(message, "message", "") or "").strip()
     if not text:
         return Path(filename).stem
 
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    lines = [_clean(l) for l in text.splitlines() if _clean(l)]
 
-    reciter = None
-    surah = None
-
-    for line in lines:
-        # Match "للشيخ <Name>" or "للشيخة <Name>"
-        if reciter is None:
-            m = re.search(r'للشيخ[ة]?\s+(.+)', line)
-            if m:
-                reciter = m.group(1).strip()
-                continue
-        # Second meaningful line (not a URL) is usually the surah/prayer info
-        if surah is None and not line.startswith("http") and line != lines[0]:
-            surah = line[:100]
-
-    if reciter and surah:
-        return f"{reciter} - {surah}"
+    # --- 1. Reciter ---
+    reciter = _extract_reciter(lines)
+    reciter_idx = 0
     if reciter:
-        return reciter
-    # Fall back to first non-URL line
-    for line in lines:
-        if not line.startswith("http"):
-            return line[:150]
-    return Path(filename).stem
+        for i, l in enumerate(lines):
+            if re.search(r'للشيخ[ة]?', l):
+                reciter_idx = i
+                break
+
+    # --- 2. Info line (prayer + surah) ---
+    info = _extract_info_line(lines, reciter_idx)
+
+    if info:
+        prayer = _extract_prayer(info)
+        surahs = _extract_surahs(info)
+
+        if prayer and surahs:
+            detail = f"{prayer} - {surahs}"
+        elif prayer:
+            # Keep only Arabic portion before first pipe, slash, URL, or Latin run
+            ar_part = re.split(
+                r'\s*\|\s*|\s*/\s*|\s*https?://|(?<=[^\x00-\x7F])\s+[A-Za-z]',
+                info
+            )[0]
+            ar_part = re.sub(r'[\s\.,،؛:]+$', '', _clean(_NOISE.sub("", ar_part)))
+            detail = ar_part or prayer
+        else:
+            # Strip URLs and trim
+            detail = _clean(_NOISE.sub("", info))[:120]
+    else:
+        detail = None
+
+    # --- 3. Assemble ---
+    if reciter and detail:
+        title = f"{reciter} - {detail}"
+    elif reciter:
+        title = reciter
+    elif detail:
+        title = detail
+    else:
+        title = Path(filename).stem
+
+    return title[:200]
 
 
 async def iter_new_audio(
