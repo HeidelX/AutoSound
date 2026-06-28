@@ -45,7 +45,7 @@ jobs:
           # Pre-issued SoundCloud OAuth token (required for CI — no browser available):
           SOUNDCLOUD_OAUTH_TOKEN: ${{ secrets.SOUNDCLOUD_OAUTH_TOKEN }}
           # Optional: limit messages scanned per run (omit for unlimited / catch-all)
-          # TELEGRAM_FETCH_LIMIT: "50"
+          TELEGRAM_FETCH_LIMIT: "50"
         run: python main.py
 
       # ── 5. Commit updated state.json ─────────────────────────────────────────
