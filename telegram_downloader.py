@@ -299,7 +299,11 @@ async def download_new_audio(channel: str) -> list[dict]:
                 channel, min_id, fetch_limit or "unlimited")
 
     results = []
-    async with TelegramClient(session, api_id, api_hash) as client:
+    client = TelegramClient(session, api_id, api_hash)
+    await client.connect()
+    try:
+        if not await client.is_user_authorized():
+            raise RuntimeError("Telegram session is not authorized. Re-generate TELEGRAM_SESSION.")
         async for msg_id, file_bytes, filename, title in iter_new_audio(
             client, channel, min_id, limit=fetch_limit
         ):
@@ -314,6 +318,8 @@ async def download_new_audio(channel: str) -> list[dict]:
             # Update state incrementally so a crash mid-run saves partial progress
             state["last_message_id"] = max(state["last_message_id"], msg_id)
             _save_state(state)
+    finally:
+        await client.disconnect()
 
     logger.info("Downloaded %d new audio file(s)", len(results))
     return results
