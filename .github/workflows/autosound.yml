@@ -45,7 +45,7 @@ jobs:
           # Full SoundCloud token JSON (includes refresh_token for auto-renewal):
           SOUNDCLOUD_TOKEN_JSON: ${{ secrets.SOUNDCLOUD_TOKEN_JSON }}
           # Optional: limit messages scanned per run (omit for unlimited / catch-all)
-          TELEGRAM_FETCH_LIMIT: "50"
+          TELEGRAM_FETCH_LIMIT: "10"
         run: python main.py
 
       # ── 5. Commit updated state.json ─────────────────────────────────────────
