@@ -42,13 +42,10 @@ jobs:
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
           TELEGRAM_CHANNEL: ${{ secrets.TELEGRAM_CHANNEL }}
-          # Use a pre-issued OAuth token (recommended):
+          # Pre-issued SoundCloud OAuth token (required for CI — no browser available):
           SOUNDCLOUD_OAUTH_TOKEN: ${{ secrets.SOUNDCLOUD_OAUTH_TOKEN }}
-          # Or use username/password credentials instead:
-          # SOUNDCLOUD_CLIENT_ID: ${{ secrets.SOUNDCLOUD_CLIENT_ID }}
-          # SOUNDCLOUD_CLIENT_SECRET: ${{ secrets.SOUNDCLOUD_CLIENT_SECRET }}
-          # SOUNDCLOUD_USERNAME: ${{ secrets.SOUNDCLOUD_USERNAME }}
-          # SOUNDCLOUD_PASSWORD: ${{ secrets.SOUNDCLOUD_PASSWORD }}
+          # Optional: limit messages scanned per run (omit for unlimited / catch-all)
+          # TELEGRAM_FETCH_LIMIT: "50"
         run: python main.py
 
       # ── 5. Commit updated state.json ─────────────────────────────────────────

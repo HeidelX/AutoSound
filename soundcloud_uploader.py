@@ -211,7 +211,18 @@ def _refresh_token(config: dict, token_data: dict) -> dict:
 
 
 def get_access_token(config: dict) -> str:
-    """Return a valid access token, refreshing if expired."""
+    """Return a valid access token.
+
+    Priority:
+      1. SOUNDCLOUD_OAUTH_TOKEN env var  — used in CI / GitHub Actions
+      2. Saved token file                — used locally after first OAuth flow
+      3. Interactive OAuth flow          — first-time local setup only
+    """
+    # CI path: pre-issued token injected via environment variable
+    oauth_token = os.getenv("SOUNDCLOUD_OAUTH_TOKEN", "").strip()
+    if oauth_token:
+        return oauth_token
+
     token_data = _load_tokens(config)
     if token_data is None:
         print("No saved tokens found. Running authorization flow...")

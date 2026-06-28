@@ -241,14 +241,16 @@ def _track_title(message, filename: str) -> str:
 
 
 async def iter_new_audio(
-    client: TelegramClient, channel: str, min_id: int
+    client: TelegramClient, channel: str, min_id: int, limit: int | None = None
 ) -> AsyncIterator[tuple]:
     """
     Yield (message_id, file_bytes, filename, title) for each audio message
     with id > min_id, in ascending order.
+
+    limit: max messages to scan (None = unlimited, useful for CI daily runs).
     """
     messages = []
-    async for msg in client.iter_messages(channel, min_id=min_id, reverse=True, limit=10):
+    async for msg in client.iter_messages(channel, min_id=min_id, reverse=True, limit=limit):
         if not isinstance(msg.media, MessageMediaDocument):
             continue
         doc = msg.media.document
@@ -273,26 +275,33 @@ async def download_new_audio(channel: str) -> list[dict]:
     """
     Connect to Telegram, download all new audio since last run.
     Returns list of dicts with keys: message_id, file_bytes, filename, title.
+
+    Reads TELEGRAM_FETCH_LIMIT from the environment to cap the number of
+    messages scanned per run (useful for local testing). Defaults to unlimited.
     """
     api_id = int(os.environ["TELEGRAM_API_ID"])
     api_hash = os.environ["TELEGRAM_API_HASH"]
-    session_b64 = os.environ.get("TELEGRAM_SESSION", "").strip()
+    session_str = os.environ.get("TELEGRAM_SESSION", "").strip()
 
-    if session_b64:
-        # CI / GitHub Actions: use StringSession from env var
-        session = StringSession(session_b64)
+    if session_str:
+        # CI / GitHub Actions: StringSession string injected via env var
+        session = StringSession(session_str)
     else:
         # Local: use a persistent file session; Telethon handles login on first run
         session = str(Path(__file__).parent / "autosound")
 
+    fetch_limit_env = os.environ.get("TELEGRAM_FETCH_LIMIT", "").strip()
+    fetch_limit: int | None = int(fetch_limit_env) if fetch_limit_env else None
+
     state = _load_state()
     min_id = state["last_message_id"]
-    logger.info("Fetching messages from channel %s with id > %d", channel, min_id)
+    logger.info("Fetching messages from channel %s with id > %d (limit=%s)",
+                channel, min_id, fetch_limit or "unlimited")
 
     results = []
     async with TelegramClient(session, api_id, api_hash) as client:
         async for msg_id, file_bytes, filename, title in iter_new_audio(
-            client, channel, min_id
+            client, channel, min_id, limit=fetch_limit
         ):
             results.append(
                 {
