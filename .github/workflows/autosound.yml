@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: write  # needed to commit updated state.json back to the repo
-  secrets: write   # needed to update SOUNDCLOUD_TOKEN secret after each refresh
 
 jobs:
   sync:
@@ -45,7 +44,7 @@ jobs:
           TELEGRAM_CHANNEL: ${{ secrets.TELEGRAM_CHANNEL }}
           TELEGRAM_FETCH_LIMIT: "30"
           SOUNDCLOUD_TOKEN: ${{ secrets.SOUNDCLOUD_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python main.py
 
