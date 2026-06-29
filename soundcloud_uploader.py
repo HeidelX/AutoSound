@@ -184,12 +184,70 @@ def _token_path() -> Path:
     return Path(__file__).parent / TOKEN_FILE
 
 
+def _update_github_secret(token_data: dict) -> None:
+    """Write token_data JSON back to the SOUNDCLOUD_TOKEN GitHub Actions secret.
+
+    No-ops silently when GITHUB_TOKEN or GITHUB_REPOSITORY are not set (local runs).
+    """
+    github_token = os.getenv("GITHUB_TOKEN", "").strip()
+    repo = os.getenv("GITHUB_REPOSITORY", "").strip()
+    if not github_token or not repo:
+        return
+
+    try:
+        import base64
+        from nacl import encoding, public as nacl_public
+
+        token_json = json.dumps(token_data)
+        api = "https://api.github.com"
+        headers = {
+            "Authorization": f"Bearer {github_token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+
+        # Fetch the repo's libsodium public key
+        key_resp = requests.get(
+            f"{api}/repos/{repo}/actions/secrets/public-key",
+            headers=headers, timeout=15,
+        )
+        key_resp.raise_for_status()
+        key_info = key_resp.json()
+
+        # Encrypt with libsodium sealed box
+        pub_key = nacl_public.PublicKey(key_info["key"].encode(),
+                                        encoding.Base64Encoder)
+        sealed = nacl_public.SealedBox(pub_key).encrypt(token_json.encode())
+        encrypted = base64.b64encode(sealed).decode()
+
+        resp = requests.put(
+            f"{api}/repos/{repo}/actions/secrets/SOUNDCLOUD_TOKEN",
+            headers=headers,
+            json={"encrypted_value": encrypted, "key_id": key_info["key_id"]},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        print("Token saved to GitHub Secret.")
+    except Exception as exc:
+        # Don't let a secret-update failure abort the upload run
+        print(f"WARNING: Could not update GitHub Secret: {exc}")
+
+
 def _save_tokens(token_data: dict, config: dict) -> None:
     path = _token_path()
     path.write_text(json.dumps(token_data, indent=2), encoding="utf-8")
+    _update_github_secret(token_data)
 
 
 def _load_tokens(config: dict) -> dict | None:
+    # In CI the token is injected as the SOUNDCLOUD_TOKEN env var (JSON string)
+    env_token = os.getenv("SOUNDCLOUD_TOKEN", "").strip()
+    if env_token:
+        try:
+            return json.loads(env_token)
+        except json.JSONDecodeError:
+            print("WARNING: SOUNDCLOUD_TOKEN env var is not valid JSON, falling back to file.")
+
     path = _token_path()
     if not path.exists():
         return None

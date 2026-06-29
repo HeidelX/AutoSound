@@ -22,6 +22,9 @@ downloads/
 # Local env
 .env
 
+# SoundCloud token — stored in GitHub Actions Secret, not git
+.soundcloud_token.json
+
 # State (committed by CI, ignore local)
 # state.json is intentionally tracked by git
 

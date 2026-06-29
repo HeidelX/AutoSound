@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write  # needed to commit updated state.json back to the repo
+  secrets: write   # needed to update SOUNDCLOUD_TOKEN secret after each refresh
 
 jobs:
   sync:
@@ -43,17 +44,21 @@ jobs:
           TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
           TELEGRAM_CHANNEL: ${{ secrets.TELEGRAM_CHANNEL }}
           TELEGRAM_FETCH_LIMIT: "30"
+          SOUNDCLOUD_TOKEN: ${{ secrets.SOUNDCLOUD_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: python main.py
 
-      # ── 5. Commit updated state.json + token ─────────────────────────────────
+      # ── 5. Commit updated state.json ────────────────────────────────────────
       # state.json tracks the last processed Telegram message ID.
-      # .soundcloud_token.json is committed so the refresh_token stays valid
-      # across daily runs without needing to re-authorize.
+      # .soundcloud_token.json is no longer committed — the token is stored in
+      # the SOUNDCLOUD_TOKEN GitHub Actions secret and updated via the API after
+      # each refresh, so it survives even if this git push fails.
       - name: Commit updated state
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add state.json .soundcloud_token.json
+          git add state.json
           # Only commit if there is actually a change
           git diff --cached --quiet || git commit -m "chore: update state after sync [skip ci]"
           git pull --rebase origin main
