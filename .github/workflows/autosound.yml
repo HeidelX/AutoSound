@@ -56,4 +56,5 @@ jobs:
           git add state.json .soundcloud_token.json
           # Only commit if there is actually a change
           git diff --cached --quiet || git commit -m "chore: update state after sync [skip ci]"
+          git pull --rebase origin main
           git push
