@@ -42,7 +42,7 @@ jobs:
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
           TELEGRAM_CHANNEL: ${{ secrets.TELEGRAM_CHANNEL }}
-          TELEGRAM_FETCH_LIMIT: "10"
+          TELEGRAM_FETCH_LIMIT: "30"
         run: python main.py
 
       # ── 5. Commit updated state.json + token ─────────────────────────────────
