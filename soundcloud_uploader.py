@@ -32,7 +32,7 @@ from dotenv import load_dotenv
 # Configuration
 # ---------------------------------------------------------------------------
 
-TOKEN_FILE = ".soundcloud_token.json"
+TOKEN_FILE = ".soundcloud_token.json"  # stored at repo root, committed by CI
 UPLOAD_ARCHIVE = ".soundcloud_upload_archive.txt"
 ALBUM_ARCHIVE = ".soundcloud_album_archive.txt"
 MAX_ALBUM_TRACKS = 500
@@ -179,19 +179,21 @@ def authorize(config: dict) -> dict:
     return token_data
 
 
+def _token_path() -> Path:
+    """Token file lives at the repo root (next to main.py), not in output_dir."""
+    return Path(__file__).parent / TOKEN_FILE
+
+
 def _save_tokens(token_data: dict, config: dict) -> None:
-    token_path = os.path.join(config["output_dir"], TOKEN_FILE)
-    Path(token_path).parent.mkdir(parents=True, exist_ok=True)
-    Path(token_path).write_text(
-        json.dumps(token_data, indent=2), encoding="utf-8"
-    )
+    path = _token_path()
+    path.write_text(json.dumps(token_data, indent=2), encoding="utf-8")
 
 
 def _load_tokens(config: dict) -> dict | None:
-    token_path = os.path.join(config["output_dir"], TOKEN_FILE)
-    if not Path(token_path).exists():
+    path = _token_path()
+    if not path.exists():
         return None
-    return json.loads(Path(token_path).read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _refresh_token(config: dict, token_data: dict) -> dict:
@@ -211,30 +213,12 @@ def _refresh_token(config: dict, token_data: dict) -> dict:
 
 
 def get_access_token(config: dict) -> str:
-    """Return a valid access token.
+    """Return a valid access token, refreshing via refresh_token if expired.
 
-    Priority:
-      1. SOUNDCLOUD_TOKEN_JSON env var — full token JSON (access + refresh); used in CI
-      2. Saved token file              — used locally after first OAuth flow
-      3. Interactive OAuth flow        — first-time local setup only
-
-    For CI, set SOUNDCLOUD_TOKEN_JSON to the contents of .soundcloud_token.json.
-    The refresh_token inside will be used automatically when the access token expires.
+    The token file (.soundcloud_token.json) lives at the repo root and is
+    committed back to the repo by CI after each run, so the refresh_token
+    stays valid across daily runs.
     """
-    token_json = os.getenv("SOUNDCLOUD_TOKEN_JSON", "").strip()
-    if token_json:
-        try:
-            token_data = json.loads(token_json)
-        except json.JSONDecodeError as e:
-            raise RuntimeError(f"SOUNDCLOUD_TOKEN_JSON is not valid JSON: {e}")
-
-        expires_in = token_data.get("expires_in", 3600)
-        obtained_at = token_data.get("obtained_at", 0)
-        if time.time() > obtained_at + expires_in - 300:
-            print("CI token expired, refreshing via refresh_token...")
-            token_data = _refresh_token(config, token_data)
-        return token_data["access_token"]
-
     token_data = _load_tokens(config)
     if token_data is None:
         print("No saved tokens found. Running authorization flow...")

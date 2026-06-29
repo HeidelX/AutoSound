@@ -42,20 +42,18 @@ jobs:
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
           TELEGRAM_CHANNEL: ${{ secrets.TELEGRAM_CHANNEL }}
-          # Full SoundCloud token JSON (includes refresh_token for auto-renewal):
-          SOUNDCLOUD_TOKEN_JSON: ${{ secrets.SOUNDCLOUD_TOKEN_JSON }}
-          # Optional: limit messages scanned per run (omit for unlimited / catch-all)
           TELEGRAM_FETCH_LIMIT: "10"
         run: python main.py
 
-      # ── 5. Commit updated state.json ─────────────────────────────────────────
-      # state.json tracks the last processed Telegram message ID so the next
-      # run only fetches new messages.
+      # ── 5. Commit updated state.json + token ─────────────────────────────────
+      # state.json tracks the last processed Telegram message ID.
+      # .soundcloud_token.json is committed so the refresh_token stays valid
+      # across daily runs without needing to re-authorize.
       - name: Commit updated state
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add state.json
+          git add state.json .soundcloud_token.json
           # Only commit if there is actually a change
           git diff --cached --quiet || git commit -m "chore: update state after sync [skip ci]"
           git push
