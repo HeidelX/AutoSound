@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(update-config)",
+      "Bash(python3 -m venv .venv)",
+      "Bash(.venv/bin/pip install:*)",
+      "WebSearch",
+      "Bash(.venv/bin/python:*)",
+      "Bash(/Users/I541965/Develop/AutoSound/.venv/bin/python:*)",
+      "Bash(pip install:*)",
+      "Bash(pip3 install:*)",
+      "Bash(python3:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh workflow:*)",
+      "Bash(gh auth:*)",
+      "Bash(gh run:*)",
+      "Bash(gh release:*)",
+      "Bash(git rm:*)"
+    ]
+  }
+}
