@@ -17,7 +17,12 @@
       "Bash(gh auth:*)",
       "Bash(gh run:*)",
       "Bash(gh release:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(pip show *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('fetch_youtube.py'\\).read\\(\\)\\); print\\('fetch_youtube.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('autosound_youtube.py'\\).read\\(\\)\\); print\\('autosound_youtube.py OK'\\)\")",
+      "Bash(brew install *)",
+      "Bash(deno --version)"
     ]
   }
 }
