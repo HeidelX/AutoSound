@@ -22,7 +22,9 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('fetch_youtube.py'\\).read\\(\\)\\); print\\('fetch_youtube.py OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('autosound_youtube.py'\\).read\\(\\)\\); print\\('autosound_youtube.py OK'\\)\")",
       "Bash(brew install *)",
-      "Bash(deno --version)"
+      "Bash(deno --version)",
+      "Skill(run)",
+      "Bash(python *)"
     ]
   }
 }

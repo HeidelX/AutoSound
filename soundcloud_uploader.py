@@ -396,10 +396,11 @@ def _request_with_retry(method: str, url: str, access_token: str,
 
 def upload_track(mp3_path: Path, title: str, genre: str, tag_list: str,
                  description: str, artwork_path: str | None,
-                 access_token: str, config: dict) -> str | None:
+                 access_token: str, config: dict,
+                 filename: str | None = None) -> str | None:
     """Upload a single MP3 to SoundCloud. Returns the track URN or None."""
     files = {
-        "track[asset_data]": (mp3_path.name, open(mp3_path, "rb"),
+        "track[asset_data]": (filename or mp3_path.name, open(mp3_path, "rb"),
                               "audio/mpeg"),
     }
     data = {

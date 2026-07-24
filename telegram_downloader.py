@@ -130,7 +130,8 @@ def _extract_reciter(lines: list[str]) -> str | None:
     for line in lines:
         m = re.search(r'للشيخ[ة]?\s+(.+)', line)
         if m:
-            return _clean(m.group(1))
+            name = _clean(m.group(1))
+            return re.sub(r'_', ' ', re.sub(r'#', '', name)).strip()
     return None
 
 
@@ -178,24 +179,14 @@ def _extract_info_line(lines: list[str], reciter_line_idx: int) -> str | None:
 
 
 def _track_title(message, filename: str) -> str:
-    """
-    Build a clean track title from the Telegram message text.
-
-    Strategy (in priority order):
-      1. "<Reciter> - <Prayer> - <Surah(s)>"  — ideal full parse
-      2. "<Reciter> - <info line>"             — reciter + raw info (trimmed)
-      3. "<info line>"                         — no reciter found
-      4. filename stem                         — fallback
-
-    All invisible Unicode marks are stripped. The result is capped at 200 chars.
-    """
+    """Build title: <Surah> - <Prayer AR> - <Reciter> - <Hijri date>"""
     text = (getattr(message, "message", "") or "").strip()
     if not text:
-        return Path(filename).stem
+        stem = Path(filename).stem
+        return re.sub(r'^#+', '', stem).strip()[:200]
 
     lines = [_clean(l) for l in text.splitlines() if _clean(l)]
 
-    # --- 1. Reciter ---
     reciter = _extract_reciter(lines)
     reciter_idx = 0
     if reciter:
@@ -204,40 +195,39 @@ def _track_title(message, filename: str) -> str:
                 reciter_idx = i
                 break
 
-    # --- 2. Info line (prayer + surah) ---
     info = _extract_info_line(lines, reciter_idx)
+    prayer_ar = _extract_prayer_ar(info) if info else None
+    surahs = _extract_surahs(info) if info else None
+    hijri = _extract_hijri_date(text)
 
-    if info:
-        prayer = _extract_prayer(info)
-        surahs = _extract_surahs(info)
+    parts = []
+    if surahs:
+        parts.append(surahs)
+    if prayer_ar:
+        parts.append(prayer_ar)
+    if reciter:
+        parts.append(reciter)
+    if hijri:
+        parts.append(hijri)
 
-        if prayer and surahs:
-            detail = f"{prayer} - {surahs}"
-        elif prayer:
-            # Keep only Arabic portion before first pipe, slash, URL, or Latin run
-            ar_part = re.split(
-                r'\s*\|\s*|\s*/\s*|\s*https?://|(?<=[^\x00-\x7F])\s+[A-Za-z]',
-                info
-            )[0]
-            ar_part = re.sub(r'[\s\.,،؛:]+$', '', _clean(_NOISE.sub("", ar_part)))
-            detail = ar_part or prayer
-        else:
-            # Strip URLs and trim
-            detail = _clean(_NOISE.sub("", info))[:120]
-    else:
-        detail = None
+    if parts:
+        return " - ".join(parts)[:200]
 
-    # --- 3. Assemble ---
-    if reciter and detail:
-        title = f"{reciter} - {detail}"
-    elif reciter:
-        title = reciter
-    elif detail:
-        title = detail
-    else:
-        title = Path(filename).stem
+    stem = Path(filename).stem
+    return re.sub(r'^#+', '', stem).strip()[:200]
 
-    return title[:200]
+
+def _extract_hijri_date(text: str) -> str | None:
+    m = re.search(r'(\d{1,2}-\d{1,2}-\d{4}هـ)', text)
+    return m.group(1) if m else None
+
+
+def _extract_prayer_ar(text: str) -> str | None:
+    text = _clean(text)
+    for ar in _PRAYER_MAP:
+        if ar in text:
+            return ar
+    return None
 
 
 async def iter_new_audio(
@@ -322,4 +312,66 @@ async def download_new_audio(channel: str) -> list[dict]:
         await client.disconnect()
 
     logger.info("Downloaded %d new audio file(s)", len(results))
+    return results
+
+
+async def iter_last_audio(
+    client: TelegramClient, channel: str, n: int, skip_ids: set[int] | None = None
+) -> AsyncIterator[tuple]:
+    """Yield (message_id, file_bytes, filename, title) for audio among the last n messages."""
+    messages = []
+    async for msg in client.iter_messages(channel, limit=n):
+        if not isinstance(msg.media, MessageMediaDocument):
+            continue
+        doc = msg.media.document
+        if not _is_audio(doc):
+            continue
+        if skip_ids and msg.id in skip_ids:
+            logger.info("Skipping already-downloaded message %d", msg.id)
+            continue
+        messages.append(msg)
+
+    for msg in reversed(messages):
+        doc = msg.media.document
+        filename = _filename_for(doc, msg.id)
+        title = _track_title(msg, filename)
+        logger.info("Downloading message %d — %s", msg.id, filename)
+        with tempfile.NamedTemporaryFile(suffix=Path(filename).suffix, delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        await client.download_media(msg, file=str(tmp_path))
+        file_bytes = tmp_path.read_bytes()
+        tmp_path.unlink(missing_ok=True)
+        yield msg.id, file_bytes, filename, title
+
+
+async def download_last_audio(channel: str, n: int) -> list[dict]:
+    """Download audio from the last n messages, skipping already-downloaded IDs."""
+    api_id = int(os.environ["TELEGRAM_API_ID"])
+    api_hash = os.environ["TELEGRAM_API_HASH"]
+    session_str = os.environ.get("TELEGRAM_SESSION", "").strip()
+
+    session = StringSession(session_str) if session_str else str(Path(__file__).parent / "autosound")
+
+    logger.info("Fetching audio from last %d messages in channel %s", n, channel)
+
+    state = _load_state()
+    skip_ids = set(state.get("downloaded_ids", []))
+    results = []
+    client = TelegramClient(session, api_id, api_hash)
+    await client.connect()
+    try:
+        if not await client.is_user_authorized():
+            raise RuntimeError("Telegram session is not authorized. Re-generate TELEGRAM_SESSION.")
+        async for msg_id, file_bytes, filename, title in iter_last_audio(client, channel, n, skip_ids=skip_ids):
+            results.append({"message_id": msg_id, "file_bytes": file_bytes, "filename": filename, "title": title})
+            state["last_message_id"] = max(state.get("last_message_id", 0), msg_id)
+            state.setdefault("downloaded_ids", [])
+            if msg_id not in skip_ids:
+                state["downloaded_ids"].append(msg_id)
+                skip_ids.add(msg_id)
+            _save_state(state)
+    finally:
+        await client.disconnect()
+
+    logger.info("Downloaded %d audio file(s)", len(results))
     return results

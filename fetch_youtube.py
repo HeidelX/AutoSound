@@ -112,6 +112,7 @@ def _download_playlist(playlist_url: str, folder: Path, archive_file: Path | Non
         "sleep_interval": 1,
         "max_sleep_interval": 5,
         "noprogress": False,
+        "newline": True,
         "writeinfojson": False,
         "writethumbnail": False,
         "extractor_args": {"youtube": {"player_client": ["web", "android"]}},
