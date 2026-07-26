@@ -24,7 +24,8 @@
       "Bash(brew install *)",
       "Bash(deno --version)",
       "Skill(run)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(.venv/bin/pip show *)"
     ]
   }
 }
